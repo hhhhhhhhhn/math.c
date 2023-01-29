@@ -4,8 +4,9 @@
 
 const unsigned int SIGN_MASK = 0b10000000000000000000000000000000;
 const unsigned int EXP_MASK  = 0b01111111100000000000000000000000;
-const unsigned int FRAC_MASK = 0b00000000011111111111111111111111;
+const unsigned int MAN_MASK  = 0b00000000011111111111111111111111;
 const float PI = 3.14159265358979323;
+const float EULER = 2.718281828459045;
 
 // f = (1 + M/2^23)*2^(E-127)
 // bin f = E*2^23 + M
@@ -36,31 +37,32 @@ static inline int math_fexp(float x) {
 	return exponent - 127;
 }
 
-static inline void math_setexp(float* x, unsigned int exponent) {
+static inline void math_setfexp(float* x, unsigned int exponent) {
 	exponent = exponent + 127;
 	unsigned int* bits = (unsigned int*) x;
 	*bits = (*bits & ~EXP_MASK) | (exponent << 23);
 }
 
+// f = (1 + M/2^23)*2^(E-127)
+// bin f = E*2^23 + M
+// 
+// log(x+ε) ≈ ε + µ
+// µ = correction term, 0.05
+// 
+// log2 f = log2(1 + M/2^23) + E - 127
+//        ≈ M/2^23 + E + µ - 127
+//        ≈ (M + 2^23*E)/2^23 - 126.95
+//        ≈ (bin f)/2^23 - 126.95
+// 
+// log2(sqrt(x)) = 1/2 log2(x)
+// log2(s) = 1/2 log2(x)
+// (bin s)/(2^23) - 126.95 = (bin x)/(2^24) - 126.95/2
+// (bin s)/(2^23) = (bin x)/(2^24) - 126.95/2 + 126.95
+// (bin s)/(2^23) = (bin x)/(2^24) + 126.95/2
+// bin s = (bin x)/2 + 2^22*126.95
+// bin s = (bin x)/2 + 532466892.8
+// bin s = (bin x)/2 + 532466893
 float math_sqrt_initial(float x) {
-	// This method uses the initial approximation for x = a*2^(2n), √x = (0.5a + 0.5)*2^n
-	int exponent = math_fexp(x);
-	float x_coef = x;
-	math_setexp(&x_coef, 0);
-
-	int mod2 = exponent % 2;
-	x_coef = (mod2+1)*x_coef - mod2;
-	//if (exponent % 2 == 1) { // Division of the exponent will floor, compensate with the coefficient
-	//	x_coef = 2*x_coef-1;
-	//}
-
-	float two_to_nth = 1.0;
-	math_setexp(&two_to_nth, exponent/2);
-	float initial = (0.5 + x_coef/2) * two_to_nth;
-	return initial;
-}
-
-float math_sqrt_fast_initial(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = (*bits / 2) + 532466893;
 	return x;
@@ -70,13 +72,71 @@ float math_sqrt(float x) {
 	float initial = math_sqrt_initial(x);
 	float result = initial/2 + x/(2*initial); // Newton's method
 	result = result/2 + x/(2*result); // Newton's method
-	result = result/2 + x/(2*result); // Newton's method
 	return result;
 }
 
 float math_abs(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = *bits & ~SIGN_MASK;
+	return x;
+}
+
+
+// f = (1 + M/2^23)*2^(E-127)
+// bin f = E*2^23 + M
+// 
+// log(x+ε) ≈ ε + µ
+// µ = correction term, 0.05
+// 
+// log2 f = log2(1 + M/2^23) + E - 127
+//        ≈ M/2^23 + E + µ - 127
+//        ≈ (M + 2^23*E)/2^23 - 126.95
+//        ≈ (bin f)/2^23 - 126.95
+// 
+// log2(e^x) = x log2(e)
+// (bin s)/2^23 - 126.95 = x * log2(e)
+// (bin s)/2^23 = x*1.44269504089 + 126.95
+// (bin s) = x*1.44269504089*2^23 + 126.95*2^23
+// 
+// (bin s) = x*12102203.1616 + 1064933786
+float math_exp(float x) {
+	unsigned int data = x*12102203.1616 + 1064933786.6;
+	return *(float*) &data;
+}
+
+float math_log2(float x) {
+	float log = math_fexp(x);
+	float s = x;
+	math_setfexp(&s, 0);
+	s = s - 1.5;
+	float mantissa_factor = 0.58496+0.96179*s-0.32059*s*s+0.14248*s*s*s;
+	return log + mantissa_factor;
+}
+
+// NOTE: Slower, less accurate, but funner than normal div
+// f = (1 + M/2^23)*2^(E-127)
+// bin f = E*2^23 + M
+// 
+// log(x+ε) ≈ ε + µ
+// µ = correction term, 0.05
+// 
+// log2 f = log2(1 + M/2^23) + E - 127
+//        ≈ M/2^23 + E + µ - 127
+//        ≈ (M + 2^23*E)/2^23 - 126.95
+//        ≈ (bin f)/2^23 - 126.95
+// 
+// log2(x/y) = log2(x) - log2(y)
+// (bin s)/2^23 - 126.95 = (bin x)/2^23 - 126.95 - ((bin y)/2^23 - 126.95)
+// (bin s)/2^23 - 126.95 = (bin x)/2^23 - (bin y)/2^23
+// (bin s)/2^23 - 126.95 = (bin x - bin y)/2^23
+// (bin s)/2^23 = (bin x - bin y)/2^23 + 126.95
+// (bin s) = bin x - bin y + 126.95*2^23
+// (bin s) = bin x - bin y + 126.95*2^23
+// (bin s) = bin x - bin y + 1064933785.6
+// (bin s) = bin x - bin y + 1064933786
+float math_slow_div(float x, float y) {
+	unsigned int* xbits = (unsigned int*) &x;
+	*xbits = *xbits - (*(unsigned int*)&y) + 1064933786;
 	return x;
 }
 
@@ -109,8 +169,7 @@ float math_tan(float x) {
 
 #include <time.h>
 #include <math.h>
-void keep_alive(volatile float result) {
-}
+void keep_alive(volatile float result) {}
 
 void bench() {
 	int iters = 100000000;
@@ -124,7 +183,7 @@ void bench() {
 
 	start = clock();
 	for (int i = 1; i < iters; i++) {
-		float result = (float)1000000000 * math_pow(i, -1);
+		float result = math_slow_div((float)1000000000, (float)i);
 		keep_alive(result);
 	}
 	end = clock();
@@ -148,10 +207,10 @@ void bench() {
 }
 
 int main() {
+	printf("22/7     = %f\n", math_slow_div(22, 7));
 	printf("abs 2    = %f\n", math_abs(2));
 	printf("abs -3   = %f\n", math_abs(-3));
 	printf("sqrt 2   = %f\n", math_sqrt(2));
-	printf("sqrt 2   = %f\n", math_sqrt_fast_initial(2));
 	printf("7 mod 3  = %f\n", math_mod(7, 3));
 	printf("-1 mod 3 = %f\n", math_mod(-1, 3));
 	printf("sin 4    = %f\n", math_sin(4));
@@ -160,6 +219,8 @@ int main() {
 	printf("tan 9    = %f\n", math_tan(9));
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
+	printf("log2 243 = %e\n", math_log2(243));
+	printf("e^20.5   = %e\n", math_exp(2));
 	bench();
 	return 0;
 }
