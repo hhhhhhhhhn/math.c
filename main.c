@@ -25,12 +25,13 @@ const float EULER = 2.718281828459045;
 // bin s = 2^23 * (y*((bin x)/2^23 - 126.95) + 126.95)
 // bin s = 2^23*y*((bin x)/2^23 - 126.95) + 126.95*2^23
 // bin s = y*((bin x) - 126.95*2^23) + 126.95*2^23
-float math_pow(float base, int exponent) {
-	unsigned int* base_bits = (unsigned int*) &base;
-	unsigned int result = exponent * (*base_bits - (1<<23)*126.95) + (1<<23)*126.95;
-	return *(float*)&result;
-}
+// float math_pow(float base, int exponent) {
+// 	unsigned int* base_bits = (unsigned int*) &base;
+// 	unsigned int result = exponent * (*base_bits - (1<<23)*126.95) + (1<<23)*126.95;
+// 	return *(float*)&result;
+// }
 
+// Get exponent part
 static inline int math_fexp(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	int exponent = (*bits & EXP_MASK) >> 23;
@@ -41,6 +42,11 @@ static inline void math_setfexp(float* x, unsigned int exponent) {
 	exponent = exponent + 127;
 	unsigned int* bits = (unsigned int*) x;
 	*bits = (*bits & ~EXP_MASK) | (exponent << 23);
+}
+
+static inline void math_setfmantissa(float* x, unsigned int mantissa) {
+	unsigned int* bits = (unsigned int*) x;
+	*bits = (*bits & ~MAN_MASK) | mantissa;
 }
 
 // f = (1 + M/2^23)*2^(E-127)
@@ -99,7 +105,7 @@ float math_abs(float x) {
 // (bin s) = x*1.44269504089*2^23 + 126.95*2^23
 // 
 // (bin s) = x*12102203.1616 + 1064933786
-float math_exp(float x) {
+float math_slow_exp(float x) {
 	unsigned int data = x*12102203.1616 + 1064933786.6;
 	return *(float*) &data;
 }
@@ -111,6 +117,23 @@ float math_log2(float x) {
 	s = s - 1.5;
 	float mantissa_factor = 0.58496+0.96179*s-0.32059*s*s+0.14248*s*s*s;
 	return log + mantissa_factor;
+}
+
+// TODO: Fix
+float math_pow2(float x) {
+	int exponent = math_fexp(x);
+	float s = x;
+	math_setfexp(&s, 0);
+	s = s - 1.5;
+	float mantissa_factor = 2.82842+1.96051*s+0.67946*s*s+0.15698*s*s*s;
+	float result = 1;
+	math_setfexp(&result, 1<<exponent);
+	printf("%f %i %i\n", mantissa_factor, exponent, math_fexp(mantissa_factor));
+	return result*mantissa_factor;
+}
+
+float math_pow(float base, float exponent) {
+	return 2*math_log2(base)*exponent;
 }
 
 // NOTE: Slower, less accurate, but funner than normal div
@@ -217,10 +240,11 @@ int main() {
 	printf("sin 7    = %f\n", math_sin(7));
 	printf("cos 9    = %f\n", math_cos(9));
 	printf("tan 9    = %f\n", math_tan(9));
+	printf("2^10.7   = %f\n", math_pow2(10.7));
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
 	printf("log2 243 = %e\n", math_log2(243));
-	printf("e^20.5   = %e\n", math_exp(2));
+	printf("e^20.5   = %e\n", math_slow_exp(2));
 	bench();
 	return 0;
 }
