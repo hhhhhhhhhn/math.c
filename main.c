@@ -8,29 +8,6 @@ const unsigned int MAN_MASK  = 0b00000000011111111111111111111111;
 const float PI = 3.14159265358979323;
 const float EULER = 2.718281828459045;
 
-// f = (1 + M/2^23)*2^(E-127)
-// bin f = E*2^23 + M
-// 
-// log(x+ε) ≈ ε + µ
-// µ = correction term, 0.05
-// 
-// log2 f = log2(1 + M/2^23) + E - 127
-//        ≈ M/2^23 + E + µ - 127
-//        ≈ (M + 2^23*E)/2^23 - 126.95
-// 
-// log2(x^y) = y log2(x)
-// log2(s) = y log2(x)
-// (bin s)/2^23 - 126.95 = y*((bin x)/2^23 - 126.95)
-// (bin s)/2^23 = y*((bin x)/2^23 - 126.95) + 126.95
-// bin s = 2^23 * (y*((bin x)/2^23 - 126.95) + 126.95)
-// bin s = 2^23*y*((bin x)/2^23 - 126.95) + 126.95*2^23
-// bin s = y*((bin x) - 126.95*2^23) + 126.95*2^23
-// float math_pow(float base, int exponent) {
-// 	unsigned int* base_bits = (unsigned int*) &base;
-// 	unsigned int result = exponent * (*base_bits - (1<<23)*126.95) + (1<<23)*126.95;
-// 	return *(float*)&result;
-// }
-
 // Get exponent part
 static inline int math_fexp(float x) {
 	unsigned int* bits = (unsigned int*) &x;
@@ -68,7 +45,7 @@ static inline void math_setfmantissa(float* x, unsigned int mantissa) {
 // bin s = (bin x)/2 + 2^22*126.95
 // bin s = (bin x)/2 + 532466892.8
 // bin s = (bin x)/2 + 532466893
-float math_sqrt_initial(float x) {
+static inline float math_sqrt_initial(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = (*bits / 2) + 532466893;
 	return x;
@@ -76,8 +53,8 @@ float math_sqrt_initial(float x) {
 
 float math_sqrt(float x) {
 	float initial = math_sqrt_initial(x);
-	float result = initial/2 + x/(2*initial); // Newton's method
-	result = result/2 + x/(2*result); // Newton's method
+	float result = 0.5*(initial + x/initial); // Newton's method
+	result = 0.5*(result + x/result); // Newton's method
 	return result;
 }
 
@@ -85,29 +62,6 @@ float math_abs(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = *bits & ~SIGN_MASK;
 	return x;
-}
-
-
-// f = (1 + M/2^23)*2^(E-127)
-// bin f = E*2^23 + M
-// 
-// log(x+ε) ≈ ε + µ
-// µ = correction term, 0.05
-// 
-// log2 f = log2(1 + M/2^23) + E - 127
-//        ≈ M/2^23 + E + µ - 127
-//        ≈ (M + 2^23*E)/2^23 - 126.95
-//        ≈ (bin f)/2^23 - 126.95
-// 
-// log2(e^x) = x log2(e)
-// (bin s)/2^23 - 126.95 = x * log2(e)
-// (bin s)/2^23 = x*1.44269504089 + 126.95
-// (bin s) = x*1.44269504089*2^23 + 126.95*2^23
-// 
-// (bin s) = x*12102203.1616 + 1064933786
-float math_slow_exp(float x) {
-	unsigned int data = x*12102203.1616 + 1064933786.6;
-	return *(float*) &data;
 }
 
 float math_log2(float x) {
@@ -119,21 +73,25 @@ float math_log2(float x) {
 	return log + mantissa_factor;
 }
 
-// TODO: Fix
+int math_floor(float x) {
+	return (int)x - (x < 0);
+}
+
 float math_pow2(float x) {
-	int exponent = math_fexp(x);
-	float s = x;
-	math_setfexp(&s, 0);
-	s = s - 1.5;
-	float mantissa_factor = 2.82842+1.96051*s+0.67946*s*s+0.15698*s*s*s;
-	float result = 1;
-	math_setfexp(&result, 1<<exponent);
-	printf("%f %i %i\n", mantissa_factor, exponent, math_fexp(mantissa_factor));
-	return result*mantissa_factor;
+	int whole = math_floor(x);
+	float decimal = x - whole;
+	float s = decimal - 0.5;
+	float decimal_factor = 1.41421 + 0.980258*s + 0.339732*s*s + 0.0784947*s*s*s;
+
+	int exp = math_fexp(decimal_factor);
+	exp += whole;
+	math_setfexp(&decimal_factor, exp);
+
+	return decimal_factor;
 }
 
 float math_pow(float base, float exponent) {
-	return 2*math_log2(base)*exponent;
+	return math_pow2(math_log2(base)*exponent);
 }
 
 // NOTE: Slower, less accurate, but funner than normal div
@@ -190,6 +148,8 @@ float math_tan(float x) {
 
 #endif
 
+#ifdef MATH_RUN
+
 #include <time.h>
 #include <math.h>
 void keep_alive(volatile float result) {}
@@ -240,11 +200,15 @@ int main() {
 	printf("sin 7    = %f\n", math_sin(7));
 	printf("cos 9    = %f\n", math_cos(9));
 	printf("tan 9    = %f\n", math_tan(9));
+	printf("log2 243 = %f\n", math_log2(243));
+	printf("⌊24.5⌋   = %i\n", math_floor(24.5));
+	printf("⌊-24.5⌋  = %i\n", math_floor(-24.5));
 	printf("2^10.7   = %f\n", math_pow2(10.7));
+	printf("2^-10.7  = %f\n", math_pow2(-10.7));
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
-	printf("log2 243 = %e\n", math_log2(243));
-	printf("e^20.5   = %e\n", math_slow_exp(2));
 	bench();
 	return 0;
 }
+
+#endif
