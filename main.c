@@ -77,7 +77,7 @@ int math_floor(float x) {
 	return (int)x - (x < 0);
 }
 
-float math_pow2(float x) {
+float math_exp2(float x) {
 	int whole = math_floor(x);
 	float decimal = x - whole;
 	float s = decimal - 0.5;
@@ -91,7 +91,11 @@ float math_pow2(float x) {
 }
 
 float math_pow(float base, float exponent) {
-	return math_pow2(math_log2(base)*exponent);
+	return math_exp2(math_log2(base)*exponent);
+}
+
+float math_exp(float exponent) {
+	return math_exp2(1.44269504089 * exponent);
 }
 
 // NOTE: Slower, less accurate, but funner than normal div
@@ -203,10 +207,11 @@ int main() {
 	printf("log2 243 = %f\n", math_log2(243));
 	printf("⌊24.5⌋   = %i\n", math_floor(24.5));
 	printf("⌊-24.5⌋  = %i\n", math_floor(-24.5));
-	printf("2^10.7   = %f\n", math_pow2(10.7));
-	printf("2^-10.7  = %f\n", math_pow2(-10.7));
+	printf("2^10.7   = %f\n", math_exp2(10.7));
+	printf("2^-10.7  = %f\n", math_exp2(-10.7));
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
+	printf("e^5.6    = %e\n", math_exp(5.6));
 	bench();
 	return 0;
 }
