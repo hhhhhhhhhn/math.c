@@ -1,9 +1,14 @@
 #ifndef MATHC
 #define MATHC
 
-#ifdef MATH_RUN
+#ifdef MATHC_RUN
 #include <stdio.h>
 #include <stdlib.h>
+#endif
+
+#ifdef MATHC_NO_MATRIX
+#define MATHC_MALLOC(x) NULL
+#define MATHC_FREE(x) NULL
 #endif
 
 #if defined(_STDLIB_H) && !defined(MATHC_MALLOC)
@@ -11,7 +16,7 @@
 #define MATHC_FREE free
 #endif
 #if !defined(MATHC_MALLOC) || !defined(MATHC_FREE)
-#error "You must include stdlib.h before math.c, or set custom malloc with MATHC_MALLOC and MATHC_FREE"
+#error "You must include stdlib.h before math.c, set a custom malloc with MATHC_MALLOC and MATHC_FREE, or define MATHC_NO_MATRIX"
 #endif
 
 const unsigned int SIGN_MASK = 0b10000000000000000000000000000000;
@@ -70,7 +75,7 @@ float math_sqrt(float x) {
 	return result;
 }
 
-float math_abs(float x) {
+static inline float math_abs(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = *bits & ~SIGN_MASK;
 	return x;
@@ -287,6 +292,78 @@ math_matrix math_cross(math_matrix a, math_matrix b) {
 	return result;
 }
 
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_clone(math_matrix mat) {
+	float* data = MATHC_MALLOC(mat.rows*mat.cols*sizeof(float));
+	math_matrix result = math_create_matrix(mat.rows, mat.cols, data);
+	for (int i = 0; i < mat.rows*mat.cols; i++) {
+		data[i] = mat.data[i];
+	}
+	return result;
+}
+
+// NOTE: Done in place
+void math_matrix_swap_rows(math_matrix mat, int row1, int row2) {
+	if (row1 == row2) return;
+	for (int col = 0; col < mat.cols; col++) {
+		float temp = math_matrix_at(mat, row1, col);
+		mat.data[MATRIX_INDEX(mat, row1, col)] = math_matrix_at(mat, row2, col);
+		mat.data[MATRIX_INDEX(mat, row2, col)] = temp;
+	}
+}
+
+// NOTE: Done in place
+// Adds the (source row)*factor to the dest row
+void math_matrix_add_row_with_factor(math_matrix mat, int src, int dest, float factor) {
+	for (int col = 0; col < mat.cols; col++) {
+		mat.data[MATRIX_INDEX(mat, dest, col)] += math_matrix_at(mat, src, col)*factor;
+	}
+}
+
+// NOTE: Done in place
+void math_matrix_scale_row(math_matrix mat, int row, float factor) {
+	for (int col = 0; col < mat.cols; col++) {
+		mat.data[MATRIX_INDEX(mat, row, col)] *= factor;
+	}
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_gauss_jordan(math_matrix mat) {
+	mat = math_matrix_clone(mat);
+
+	int pcol = 0; // Column of the pivot
+	int prow = 0; // Row of the pivot
+	while(prow < mat.rows && pcol < mat.cols) {
+		// First, make sure the row has the earliest pivot
+		for(int swap = prow; swap < mat.rows; swap++) {
+			if (math_abs(math_matrix_at(mat, prow, pcol)) > 0.00001) {
+				math_matrix_swap_rows(mat, prow, swap);
+				break;
+			}
+		}
+		float pivot = math_matrix_at(mat, prow, pcol);
+		// No pivot found at this column, go to next
+		if (math_abs(pivot) <= 0.00001) {
+			pcol++;
+			continue;
+		}
+
+		// Scale so the pivot is 1
+		math_matrix_scale_row(mat, prow, 1/math_matrix_at(mat, prow, pcol));
+		
+		// Make every other element of the column a 0
+		for (int target = 0; target < mat.rows; target++) {
+			if (target == prow) continue;
+			float factor = -math_matrix_at(mat, target, pcol); // divided by pivot == 1
+			math_matrix_add_row_with_factor(mat, prow, target, factor);
+		}
+		prow++;
+		pcol++;
+	}
+	return mat;
+}
+
+
 #ifdef _STDIO_H
 int format_matrix(char* dest, int max_length, math_matrix matrix) {
 	int i = 0;
@@ -299,10 +376,11 @@ int format_matrix(char* dest, int max_length, math_matrix matrix) {
 	return i;
 }
 #endif
+
 #endif
 
 //////////////////// RUN SECTION ////////////////////////////////////
-#ifdef MATH_RUN
+#ifdef MATHC_RUN
 
 #include <time.h>
 #include <math.h>
@@ -417,6 +495,18 @@ int main() {
 	format_matrix(str, 1000, cross);
 	printf("column ⨯ row:\n%s\n", str);
 
+	math_matrix clone = math_matrix_clone(matrix);
+	format_matrix(str, 1000, clone);
+	printf("clone(mat):\n%s\n", str);
+
+	math_matrix_swap_rows(clone, 1, 3);
+	format_matrix(str, 1000, clone);
+	printf("swap(mat, 1, 3):\n%s\n", str);
+
+	math_matrix gj = math_gauss_jordan(transposed);
+	format_matrix(str, 1000, gj);
+	printf("gaussjordan(t(mat)):\n%s\n", str);
+
 	printf("det(square) = %f\n", math_matrix_determinant(square));
 
 	printf("row·column = %f\n", math_dot(row, column));
@@ -427,8 +517,11 @@ int main() {
 	free(half.data);
 	free(transposed.data);
 	free(timest.data);
+	free(gj.data);
 	free(sub22.data);
 	free(times_small.data);
+	free(clone.data);
+	free(cross.data);
 	free(str);
 
 	bench();
