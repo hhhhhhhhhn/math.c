@@ -1,4 +1,3 @@
-#include <stdio.h>
 #ifndef MATHC
 #define MATHC
 
@@ -150,12 +149,156 @@ float math_tan(float x) {
 	return math_sin(x)/math_sin(PI/2 - x);
 }
 
+#if (defined(_STDLIB_H) && defined(_STDIO_H)) || defined(MATH_RUN)
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct math_matrix {
+	int rows;
+	int cols;
+	float* data;
+} math_matrix;
+
+static inline int MATRIX_INDEX(math_matrix mat, int row, int col) {
+	return row*mat.cols + col;
+}
+static inline float math_matrix_at(math_matrix mat, int row, int col) {
+	return mat.data[MATRIX_INDEX(mat, row, col)];
+}
+
+math_matrix math_create_matrix(int rows, int cols, float* data) {
+	math_matrix m = {rows, cols, data};
+	return m;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_add(math_matrix a, math_matrix b) {
+	float* data = malloc(a.rows*a.cols*sizeof(float));
+	math_matrix result = math_create_matrix(a.rows, a.cols, data);
+	for (int row = 0; row < a.rows; row++) {
+		for (int col = 0; col < a.cols; col++) {
+			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(a, row, col) + math_matrix_at(b, row, col);
+		}
+	}
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_scale(math_matrix mat, float f) {
+	float* data = malloc(mat.rows*mat.cols*sizeof(float));
+	math_matrix result = math_create_matrix(mat.rows, mat.cols, data);
+	for (int row = 0; row < mat.rows; row++) {
+		for (int col = 0; col < mat.cols; col++) {
+			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(mat, row, col)*f;
+		}
+	}
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_transpose(math_matrix mat) {
+	float* data = malloc(mat.rows*mat.cols*sizeof(float));
+	math_matrix result = math_create_matrix(mat.cols, mat.rows, data);
+	for (int row = 0; row < mat.rows; row++) {
+		for (int col = 0; col < mat.cols; col++) {
+			data[MATRIX_INDEX(result, col, row)] = math_matrix_at(mat, row, col);
+		}
+	}
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_multiply(math_matrix a, math_matrix b) {
+	int n = a.cols; // Common side
+	float* data = malloc(a.rows*b.cols*sizeof(float));
+
+	math_matrix result = math_create_matrix(a.rows, b.cols, data);
+	for (int row = 0; row < a.rows; row++) {
+		for (int col = 0; col < b.cols; col++) {
+			float sum = 0;
+			for(int i = 0; i < n; i++) {
+				sum += math_matrix_at(a, row, i)*math_matrix_at(b, i, col);
+			}
+			data[MATRIX_INDEX(result, row, col)] = sum;
+		}
+	}
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_submatrix(math_matrix mat, int removedRow, int removedCol) {
+	float* data = malloc((mat.rows-1)*(mat.cols-1)*sizeof(float));
+	math_matrix result = math_create_matrix(mat.rows-1, mat.cols-1, data);
+
+	for (int row = 0; row < result.rows; row++) {
+		for (int col = 0; col < result.cols; col++) {
+			int mat_col = col + (col >= removedCol);
+			int mat_row = row + (row >= removedRow);
+			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(mat, mat_row, mat_col);
+		}
+	}
+	return result;
+}
+
+float math_matrix_determinant(math_matrix mat) {
+	if (mat.rows == 1) {
+		return math_matrix_at(mat, 0, 0);
+	}
+	if (mat.rows == 2) {
+		return math_matrix_at(mat, 0, 0)*math_matrix_at(mat, 1, 1)
+			 - math_matrix_at(mat, 0, 1)*math_matrix_at(mat, 1, 0);
+	}
+	float sign = 1;
+	float determinant = 0;
+	for (int col = 0; col < mat.cols; col++) {
+		math_matrix submat = math_submatrix(mat, 0, col);
+		determinant += sign*math_matrix_at(mat, 0, col)*math_matrix_determinant(submat);
+		free(submat.data);
+		sign = -sign;
+	}
+	return determinant;
+}
+
+float math_matrix_dot(math_matrix a, math_matrix b) {
+	float dot = 0;
+	for (int i = 0; i < a.rows*a.cols; i++) {
+		dot += a.data[i]*b.data[i];
+	}
+	return dot;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+// Returns a column vector
+math_matrix math_matrix_cross(math_matrix a, math_matrix b) {
+	float* data = malloc(3*sizeof(float));
+	math_matrix result = math_create_matrix(3, 1, data);
+	result.data[0] = a.data[1]*b.data[2] - a.data[2]*b.data[1];
+	result.data[1] = a.data[2]*b.data[0] - a.data[0]*b.data[2];
+	result.data[2] = a.data[0]*b.data[1] - a.data[1]*b.data[0];
+	return result;
+}
+
+int format_matrix(char* dest, int max_length, math_matrix matrix) {
+	int i = 0;
+	for (int row = 0; row < matrix.rows; row++) {
+		for (int col = 0; col < matrix.cols; col++) {
+			 i += snprintf(dest+i, max_length-i, "%10.1f", math_matrix_at(matrix, row, col));
+		}
+		i += snprintf(dest+i, max_length-i, "\n");
+	}
+	return i;
+}
+
+#endif
 #endif
 
+//////////////////// RUN SECTION ////////////////////////////////////
 #ifdef MATH_RUN
 
 #include <time.h>
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 void keep_alive(volatile float result) {}
 
 void bench() {
@@ -193,6 +336,8 @@ void bench() {
 	printf("MATH_SQRT SPEED: %e iters per second\n", iters*CLOCKS_PER_SEC/(float)(end - start));
 }
 
+float sample_values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
 int main() {
 	printf("22/7     = %f\n", math_slow_div(22, 7));
 	printf("abs 2    = %f\n", math_abs(2));
@@ -212,6 +357,71 @@ int main() {
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
 	printf("e^5.6    = %e\n", math_exp(5.6));
+	printf("\n");
+	char* str = malloc(1000 * sizeof(char));
+	math_matrix matrix = math_create_matrix(4, 3, sample_values);
+	math_matrix small  = math_create_matrix(3, 2, sample_values);
+	math_matrix square = math_create_matrix(3, 3, sample_values);
+	math_matrix column = math_create_matrix(4, 1, sample_values);
+	math_matrix row    = math_create_matrix(1, 4, sample_values+4);
+
+	format_matrix(str, 1000, matrix);
+	printf("mat:\n%s\n", str);
+
+	format_matrix(str, 1000, small);
+	printf("small:\n%s\n", str);
+
+	format_matrix(str, 1000, square);
+	printf("square:\n%s\n", str);
+
+	format_matrix(str, 1000, column);
+	printf("column:\n%s\n", str);
+
+	format_matrix(str, 1000, row);
+	printf("row:\n%s\n", str);
+
+	math_matrix byTwo = math_matrix_add(matrix, matrix);
+	format_matrix(str, 1000, byTwo);
+	printf("mat+mat:\n%s\n", str);
+
+	math_matrix half = math_matrix_scale(matrix, 0.5);
+	format_matrix(str, 1000, half);
+	printf("0.5*mat:\n%s\n", str);
+
+	math_matrix transposed = math_matrix_transpose(matrix);
+	format_matrix(str, 1000, transposed);
+	printf("t(mat):\n%s\n", str);
+
+	math_matrix timest = math_matrix_multiply(matrix, transposed);
+	format_matrix(str, 1000, timest);
+	printf("mat*t(mat):\n%s\n", str);
+
+	math_matrix times_small = math_matrix_multiply(matrix, small);
+	format_matrix(str, 1000, times_small);
+	printf("mat*small:\n%s\n", str);
+
+	math_matrix sub22 = math_submatrix(matrix, 2, 2);
+	format_matrix(str, 1000, sub22);
+	printf("sub(mat, 2, 2):\n%s\n", str);
+
+	math_matrix cross = math_matrix_cross(column, row);
+	format_matrix(str, 1000, cross);
+	printf("column ⨯ row:\n%s\n", str);
+
+	printf("det(square) = %f\n", math_matrix_determinant(square));
+
+	printf("row·column = %f\n", math_matrix_dot(row, column));
+
+	printf("\n");
+
+	free(byTwo.data);
+	free(half.data);
+	free(transposed.data);
+	free(timest.data);
+	free(sub22.data);
+	free(times_small.data);
+	free(str);
+
 	bench();
 	return 0;
 }
