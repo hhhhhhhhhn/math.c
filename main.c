@@ -180,6 +180,25 @@ static inline float math_matrix_at(math_matrix mat, int row, int col) {
 	return mat.data[MATRIX_INDEX(mat, row, col)];
 }
 
+#ifdef _STDIO_H
+int format_matrix(char* dest, int max_length, math_matrix matrix) {
+	int i = 0;
+	for (int row = 0; row < matrix.rows; row++) {
+		for (int col = 0; col < matrix.cols; col++) {
+			 i += snprintf(dest+i, max_length-i, "%10.1f", math_matrix_at(matrix, row, col));
+		}
+		i += snprintf(dest+i, max_length-i, "\n");
+	}
+	return i;
+}
+
+char matrix_chars[200];
+void print_matrix(math_matrix matrix) {
+	format_matrix(matrix_chars, sizeof(matrix_chars), matrix);
+	printf("%s", matrix_chars);
+}
+
+#endif
 math_matrix math_create_matrix(int rows, int cols, float* data) {
 	math_matrix m = {rows, cols, data};
 	return m;
@@ -363,19 +382,65 @@ math_matrix math_gauss_jordan(math_matrix mat) {
 	return mat;
 }
 
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_augment(math_matrix a, math_matrix b) {
+	float* data = MATHC_MALLOC((a.rows*a.cols+b.rows*b.cols)*sizeof(float));
+	math_matrix result = math_create_matrix(a.rows, a.cols + b.cols, data);
 
-#ifdef _STDIO_H
-int format_matrix(char* dest, int max_length, math_matrix matrix) {
-	int i = 0;
-	for (int row = 0; row < matrix.rows; row++) {
-		for (int col = 0; col < matrix.cols; col++) {
-			 i += snprintf(dest+i, max_length-i, "%10.1f", math_matrix_at(matrix, row, col));
+	for (int row = 0; row < a.rows; row++) {
+		for (int col = 0; col < a.cols; col++) {
+			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(a, row, col);
 		}
-		i += snprintf(dest+i, max_length-i, "\n");
 	}
-	return i;
+	
+	for (int row = 0; row < b.rows; row++) {
+		for (int col = 0; col < b.cols; col++) {
+			data[MATRIX_INDEX(result, row, col+a.cols)] = math_matrix_at(b, row, col);
+		}
+	}
+
+	return result;
 }
-#endif
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_crop(math_matrix mat, int rows, int cols, int start_row, int start_col) {
+	float* data = MATHC_MALLOC(rows*cols*sizeof(float));
+	math_matrix result = math_create_matrix(rows, cols, data);
+
+	for (int row = 0; row < rows; row++) {
+		for (int col = 0; col < cols; col++) {
+			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(mat, row+start_row, col+start_col);
+		}
+	}
+
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_identity_matrix(int size) {
+	float* data = MATHC_MALLOC(size*size*sizeof(float));
+	math_matrix result = math_create_matrix(size, size, data);
+	for (int row = 0; row < size; row++) {
+		for (int col = 0; col < size; col++) {
+			data[MATRIX_INDEX(result, row, col)] = (float)(row == col);
+		}	
+	}
+	return result;
+}
+
+// NOTE: Resulting matrix MUST BE FREED
+math_matrix math_matrix_invert(math_matrix mat) {
+	math_matrix identity = math_identity_matrix(mat.rows);
+	math_matrix augmented = math_matrix_augment(mat, identity);
+	math_matrix solved = math_gauss_jordan(augmented);
+	math_matrix result = math_matrix_crop(solved, mat.rows, mat.cols, 0, mat.cols);
+
+	free(identity.data);
+	free(augmented.data);
+	free(solved.data);
+
+	return result;
+}
 
 #endif
 
@@ -451,6 +516,7 @@ int main() {
 	math_matrix square = math_create_matrix(3, 3, sample_values);
 	math_matrix column = math_create_matrix(4, 1, sample_values);
 	math_matrix row    = math_create_matrix(1, 4, sample_values+4);
+	math_matrix tiny   = math_create_matrix(2, 2, sample_values);
 
 	format_matrix(str, 1000, matrix);
 	printf("mat:\n%s\n", str);
@@ -460,6 +526,9 @@ int main() {
 
 	format_matrix(str, 1000, square);
 	printf("square:\n%s\n", str);
+
+	format_matrix(str, 1000, tiny);
+	printf("tiny:\n%s\n", str);
 
 	format_matrix(str, 1000, column);
 	printf("column:\n%s\n", str);
@@ -507,6 +576,22 @@ int main() {
 	format_matrix(str, 1000, gj);
 	printf("gaussjordan(t(mat)):\n%s\n", str);
 
+	math_matrix augmented = math_matrix_augment(small, square);
+	format_matrix(str, 1000, augmented);
+	printf("augment(small, square):\n%s\n", str);
+
+	math_matrix cropped = math_matrix_crop(augmented, 3, 3, 0, 1);
+	format_matrix(str, 1000, cropped);
+	printf("crop(augment(small, square), 3, 3, 0, 1):\n%s\n", str);
+
+	math_matrix ident = math_identity_matrix(5);
+	format_matrix(str, 1000, ident);
+	printf("ident(5):\n%s\n", str);
+
+	math_matrix inverse = math_matrix_invert(tiny);
+	format_matrix(str, 1000, inverse);
+	printf("invert(tiny):\n%s\n", str);
+
 	printf("det(square) = %f\n", math_matrix_determinant(square));
 
 	printf("row·column = %f\n", math_dot(row, column));
@@ -516,6 +601,9 @@ int main() {
 	free(byTwo.data);
 	free(half.data);
 	free(transposed.data);
+	free(inverse.data);
+	free(ident.data);
+	free(augmented.data);
 	free(timest.data);
 	free(gj.data);
 	free(sub22.data);
