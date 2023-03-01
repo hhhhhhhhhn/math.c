@@ -2,21 +2,19 @@
 #define MATHC
 
 #ifdef MATHC_RUN
-#include <stdio.h>
-#include <stdlib.h>
+	#include <stdio.h>
+	#include <stdlib.h>
 #endif
 
-#ifdef MATHC_NO_MATRIX
-#define MATHC_MALLOC(x) NULL
-#define MATHC_FREE(x) NULL
-#endif
-
-#if defined(_STDLIB_H) && !defined(MATHC_MALLOC)
-#define MATHC_MALLOC malloc
-#define MATHC_FREE free
-#endif
-#if !defined(MATHC_MALLOC) || !defined(MATHC_FREE)
-#error "You must include stdlib.h before math.c, set a custom malloc with MATHC_MALLOC and MATHC_FREE, or define MATHC_NO_MATRIX"
+#ifndef MATHC_NO_MATRIX
+	#if defined(_STDLIB_H) && !defined(MATHC_MALLOC)
+		#define MATHC_MALLOC malloc
+		#define MATHC_FREE free
+	#endif
+	#if !defined(MATHC_MALLOC) || !defined(MATHC_FREE)
+		#warning "For matrix support, you must include stdlib.h before math.c, set a custom malloc with MATHC_MALLOC and MATHC_FREE, or define MATHC_NO_MATRIX"
+		#define MATHC_NO_MATRIX
+	#endif
 #endif
 
 const unsigned int SIGN_MASK = 0b10000000000000000000000000000000;
@@ -167,6 +165,7 @@ float math_tan(float x) {
 	return math_sin(x)/math_sin(PI/2 - x);
 }
 
+#ifndef MATHC_NO_MATRIX
 typedef struct math_matrix {
 	int rows;
 	int cols;
@@ -441,7 +440,6 @@ math_matrix math_matrix_invert(math_matrix mat) {
 
 	return result;
 }
-
 #endif
 
 //////////////////// RUN SECTION ////////////////////////////////////
@@ -616,4 +614,5 @@ int main() {
 	return 0;
 }
 
+#endif
 #endif
