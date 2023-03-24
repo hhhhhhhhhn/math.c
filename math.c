@@ -44,7 +44,7 @@ static inline void math_setfmantissa(float* x, unsigned int mantissa) {
 // f = (1 + M/2^23)*2^(E-127)
 // bin f = E*2^23 + M
 // 
-// log(x+ε) ≈ ε + µ
+// log(1+ε) ≈ ε + µ
 // µ = correction term, 0.05
 // 
 // log2 f = log2(1 + M/2^23) + E - 127
@@ -81,10 +81,12 @@ static inline float math_abs(float x) {
 
 float math_log2(float x) {
 	float log = math_fexp(x);
-	float s = x;
-	math_setfexp(&s, 0);
-	s = s - 1.5;
-	float mantissa_factor = 0.58496+0.96179*s-0.32059*s*s+0.14248*s*s*s;
+	math_setfexp(&x, 0);
+	float mantissa_factor = -0.0791494975944125*x*x*x*x
+		+ 0.628809283513436*x*x*x
+		- 2.08104306272368*x*x
+		+ 4.02835326547923*x
+		- 2.49676572066466;
 	return log + mantissa_factor;
 }
 
@@ -94,9 +96,12 @@ int math_floor(float x) {
 
 float math_exp2(float x) {
 	int whole = math_floor(x);
-	float decimal = x - whole;
-	float s = decimal - 0.5;
-	float decimal_factor = 1.41421 + 0.980258*s + 0.339732*s*s + 0.0784947*s*s*s;
+	x = x - whole;
+	float decimal_factor = 0.0136765239247487*x*x*x*x
+		+ 0.0516668383365699*x*x*x
+		+ 0.241710331879891*x*x
+		+ 0.692931257844771*x
+		+ 1.00000728683924;
 
 	int exp = math_fexp(decimal_factor);
 	exp += whole;
@@ -117,7 +122,7 @@ float math_exp(float exponent) {
 // f = (1 + M/2^23)*2^(E-127)
 // bin f = E*2^23 + M
 // 
-// log(x+ε) ≈ ε + µ
+// log(1+ε) ≈ ε + µ
 // µ = correction term, 0.05
 // 
 // log2 f = log2(1 + M/2^23) + E - 127
@@ -154,7 +159,13 @@ float math_sin(float x) {
 	x = math_mod(x, 2*PI);
 	int negate = x > PI;
 	x = x - (x > PI)*PI;
-	return (!negate*2 - 1) * 16*x*(PI - x)/(5*PI*PI - 4*x*(PI - x));
+
+    float approx = 0.0372093273724709*x*x*x*x
+        - 0.233793099036744*x*x*x
+        + 0.0544696816752270*x*x
+        + 0.982601147804320*x
+        + 0.00131345589782347;
+	return (!negate*2 - 1) * approx;
 }
 
 float math_cos(float x) {
