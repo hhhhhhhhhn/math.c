@@ -43,15 +43,15 @@ static inline void math_setfmantissa(float* x, unsigned int mantissa) {
 
 // f = (1 + M/2^23)*2^(E-127)
 // bin f = E*2^23 + M
-// 
+//
 // log(1+ε) ≈ ε + µ
 // µ = correction term, 0.05
-// 
+//
 // log2 f = log2(1 + M/2^23) + E - 127
 //        ≈ M/2^23 + E + µ - 127
 //        ≈ (M + 2^23*E)/2^23 - 126.95
 //        ≈ (bin f)/2^23 - 126.95
-// 
+//
 // log2(sqrt(x)) = 1/2 log2(x)
 // log2(s) = 1/2 log2(x)
 // (bin s)/(2^23) - 126.95 = (bin x)/(2^24) - 126.95/2
@@ -77,6 +77,11 @@ static inline float math_abs(float x) {
 	unsigned int* bits = (unsigned int*) &x;
 	*bits = *bits & ~SIGN_MASK;
 	return x;
+}
+
+static inline float math_sign(float x) {
+	unsigned int* bits = (unsigned int*) &x;
+	return ((*bits & SIGN_MASK) == 0)*2.0 - 1.0;
 }
 
 float math_log2(float x) {
@@ -121,15 +126,15 @@ float math_exp(float exponent) {
 // NOTE: Slower, less accurate, but funner than normal div
 // f = (1 + M/2^23)*2^(E-127)
 // bin f = E*2^23 + M
-// 
+//
 // log(1+ε) ≈ ε + µ
 // µ = correction term, 0.05
-// 
+//
 // log2 f = log2(1 + M/2^23) + E - 127
 //        ≈ M/2^23 + E + µ - 127
 //        ≈ (M + 2^23*E)/2^23 - 126.95
 //        ≈ (bin f)/2^23 - 126.95
-// 
+//
 // log2(x/y) = log2(x) - log2(y)
 // (bin s)/2^23 - 126.95 = (bin x)/2^23 - 126.95 - ((bin y)/2^23 - 126.95)
 // (bin s)/2^23 - 126.95 = (bin x)/2^23 - (bin y)/2^23
@@ -154,7 +159,6 @@ float math_mod(float dividend, float divisor) {
 	return rem + (rem < 0)*divisor;
 }
 
-// Bhaskara I
 float math_sin(float x) {
 	x = math_mod(x, 2*PI);
 	int negate = x > PI;
@@ -174,6 +178,23 @@ float math_cos(float x) {
 
 float math_tan(float x) {
 	return math_sin(x)/math_sin(PI/2 - x);
+}
+
+// f(low) must have different sign that f(high)
+float math_find_root_between(float f(float), float low, float high) {
+	float sign = 1;
+	if (f(low) > 0) {
+		sign = -1;
+	}
+	while (high - low > 0.000001) {
+		float mid = (high+low)/2;
+		if (sign*f(mid) < 0) {
+			low = mid;
+		} else {
+			high = mid;
+		}
+	}
+	return (low+high)/2;
 }
 
 #ifndef MATHC_NO_MATRIX
@@ -379,7 +400,7 @@ math_matrix math_gauss_jordan(math_matrix mat) {
 
 		// Scale so the pivot is 1
 		math_matrix_scale_row(mat, prow, 1/math_matrix_at(mat, prow, pcol));
-		
+
 		// Make every other element of the column a 0
 		for (int target = 0; target < mat.rows; target++) {
 			if (target == prow) continue;
@@ -402,7 +423,7 @@ math_matrix math_matrix_augment(math_matrix a, math_matrix b) {
 			data[MATRIX_INDEX(result, row, col)] = math_matrix_at(a, row, col);
 		}
 	}
-	
+
 	for (int row = 0; row < b.rows; row++) {
 		for (int col = 0; col < b.cols; col++) {
 			data[MATRIX_INDEX(result, row, col+a.cols)] = math_matrix_at(b, row, col);
@@ -433,7 +454,7 @@ math_matrix math_identity_matrix(int size) {
 	for (int row = 0; row < size; row++) {
 		for (int col = 0; col < size; col++) {
 			data[MATRIX_INDEX(result, row, col)] = (float)(row == col);
-		}	
+		}
 	}
 	return result;
 }
@@ -487,7 +508,7 @@ void bench() {
 	}
 	end = clock();
 	printf("SQRT SPEED: %e iters per second\n", iters*CLOCKS_PER_SEC/(float)(end - start));
-	
+
 	start = clock();
 	for (int i = 1; i < iters; i++) {
 		float result = math_sqrt((float)i);
@@ -518,6 +539,10 @@ int main() {
 	printf("34^9     = %e\n", math_pow(34, 9));
 	printf("34^-9    = %e\n", math_pow(34, -9));
 	printf("e^5.6    = %e\n", math_exp(5.6));
+	printf("sign(2)  = %f\n", math_sign(2));
+	printf("sign(-6) = %f\n", math_sign(-6));
+	printf("find_root_between(sin, -1, 1.5) = %f\n", math_find_root_between(math_sin, -1, 1.5));
+	printf("find_root_between(sin,  1, 4)   = %f\n", math_find_root_between(math_sin, 1, 4));
 	printf("\n");
 	char* str = MATHC_MALLOC(1000 * sizeof(char));
 	math_matrix matrix = math_create_matrix(4, 3, sample_values);
